@@ -1,0 +1,1409 @@
+ ---
+title: "uber data "
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+setwd("C:/Users/Architect_shwet/Desktop/data science projects/uber")
+
+library(readxl)
+#library(tidyverse)
+library(anytime)
+library(dplyr)
+library(data.table)
+library(readr)
+library("tibble")
+library(lubridate)
+library(ggplot2)
+library(tidyr)
+library(plyr)
+library(highcharter)
+```
+
+```{r}
+uber <- read.csv('Uber Request Data.csv')
+str(uber)
+```
+
+```{r}
+missing_values <- as.data.frame(colSums(is.na(uber)))
+missing_values["var"] <- row.names(missing_values)
+missing_values =  melt(missing_values, id.vars="var", value.name="no_of_NA")
+missing_values <- missing_values[missing_values$no_of_NA > 0, ]
+
+hchart(missing_values,hcaes(x=var,y=no_of_NA),type="column") %>%
+  hc_exporting(enabled = TRUE) %>%
+  hc_title(text="Barplot of missing values",align="center") %>%
+  hc_add_theme(hc_theme_elementary()) 
+```
+### The first thing is variables Request.timestamp & Drop.timestamp are datetime objects but they are not in the datetime format.
+#### So, both the variables Request.timestamp and Drop.timestamp were separted into date and time separately.
+#### Date variables 'Request_date' and 'Drop_date' were converted to date object.
+```{r}
+uber <- uber %>%
+        separate(Request.timestamp, c("Request_date", "Request_time"), " ")
+uber <- uber %>%
+  separate(Drop.timestamp, c("Drop_date", "Drop_time"), " ")
+
+uber$Request_date <- dmy(uber$Request_date)
+uber$Drop_date <- dmy(uber$Drop_date)
+```
+
+```{r}
+head(uber,6)
+```
+### Variables Request_time and Drop_time hast two types of format like ab:cd and ab:cd:00, i.e., some time objects has seconds and other don't have the seconds.
+#### Below is the script to solve this and later I joined both the date and time for each of the request and drop variables
+
+```{r}
+uber_try <- uber
+
+uber_try$reqtime1 <- hms(uber_try$Request_time) 
+uber_try$reqtime2 <- hm(uber_try$Request_time)
+uber_try$hourreq1 <- ifelse(is.na(uber_try$reqtime1), hour(uber_try$reqtime2),
+                            hour(uber_try$reqtime1))
+#uber_try$hour_hourreq1 <- hour(uber_try$reqtime1)
+
+uber_try$drop_time1 <- hms(uber_try$Drop_time)
+uber_try$Drop_time2 <- hm(uber_try$Drop_time)
+uber_try$hourdrop1 <- ifelse((is.na(uber_try$drop_time1) & is.na(uber_try$Drop_time2)), NA, ifelse(is.na(uber_try$drop_time1), hour(uber_try$Drop_time2), hour(uber_try$drop_time1)))
+
+
+uber_try$request_date_time <- paste(uber_try$Request_date, uber_try$Request_time) 
+uber_try$request_date_time1 <- ymd_hm(uber_try$request_date_time)
+uber_try$request_date_time2 <- ymd_hms(uber_try$request_date_time)
+uber_try$request_date_timefinal <- paste(uber_try$request_date_time1, uber_try$request_date_time2)
+uber_try$request_date_timefinal <- gsub(' NA', '', uber_try$request_date_timefinal)
+uber_try$request_date_timefinal <- gsub('NA ', '', uber_try$request_date_timefinal)
+uber_try$request_date_timefinal <- ymd_hms(uber_try$request_date_timefinal)
+
+uber_try$drop_date_time <- paste(uber_try$Drop_date, uber_try$Drop_time)
+uber_try$drop_date_time1 <- ymd_hm(uber_try$drop_date_time)
+uber_try$drop_date_time2 <- ymd_hms(uber_try$drop_date_time)
+uber_try$drop_date_timefinal <- paste(uber_try$drop_date_time1, uber_try$drop_date_time2)
+uber_try$drop_date_timefinal  <- gsub(' NA', '', uber_try$drop_date_timefinal)
+uber_try$drop_date_timefinal  <- gsub('NA ', '', uber_try$drop_date_timefinal)
+uber_try$drop_date_timefinal <- ymd_hms(uber_try$drop_date_timefinal)
+
+uber_try$request_date_time2 <- NULL
+uber_try$request_date_time <- NULL
+uber_try$request_date_time1 <- NULL
+uber_try$reqtime1 <- NULL
+uber_try$reqtime2 <- NULL
+uber_try$drop_time1 <- NULL
+uber_try$Drop_time2 <- NULL
+uber_try$hourreq1 <- NULL
+uber_try$Request_date <- NULL
+uber_try$Request_time <- NULL
+uber_try$drop_date_time <- NULL
+uber_try$drop_date_time1 <- NULL
+uber_try$drop_date_time2 <- NULL
+uber_try$drop_date_timefinall <- NULL
+uber_try$hourdrop1 <- NULL
+uber_try$Drop_date <- NULL
+uber_try$Drop_time <- NULL
+
+```
+
+### After writing this script, we can see that our data is ready with request_date_timefinal and drop_date_timefinal are in date-time format.
+```{r}
+head(uber_try, 6)
+```
+### Further I am creating some new variables form this date time objects to solve some business problems
+
+```{r}
+uber_try$request_hour <- hour(uber_try$request_date_timefinal)
+uber_try$drop_hour <- hour(uber_try$drop_date_timefinal)
+uber_try$request_weekdays <- weekdays(uber_try$request_date_timefinal)
+uber_try$drop_weekdays <- weekdays(uber_try$drop_date_timefinal)
+
+uber_try$request_hour <- as.factor(uber_try$request_hour)
+uber_try$drop_hour <- as.factor(uber_try$drop_hour)
+uber_try$request_weekdays <- as.factor(uber_try$request_weekdays)
+uber_try$drop_weekdays <- as.factor(uber_try$drop_weekdays)
+```
+
+### Again we can have a look over the data, we have request hour & drop hour and request weekdays & drop weekdays variables.
+
+```{r}
+head(uber_try,6)
+```
+# Additionally I am creating the time diffrence between request date-time and drop date-time to have the duration of travel for each ride in mins.
+
+```{r}
+uber_try$travel_duration <- as.numeric(difftime(uber_try$drop_date_timefinal, 
+                                                  uber_try$request_date_timefinal, units="hours"))
+```
+
+### Here is an interesting point to observe from this plot to understand the missing values.
+
+```{r}
+missing_values <- as.data.frame(colSums(is.na(uber_try)))
+missing_values["var"] <- row.names(missing_values)
+missing_values =  melt(missing_values, id.vars="var", value.name="no_of_NA")
+missing_values <- missing_values[missing_values$no_of_NA > 0, ]
+
+hchart(missing_values,hcaes(x=var,y=no_of_NA),type="column") %>%
+  hc_exporting(enabled = TRUE) %>%
+  hc_title(text="Barplot of missing values",align="center") %>%
+  hc_add_theme(hc_theme_elementary()) 
+```
+### Wherever status is Cancelled or No Cars Available we find that variables drop_date_timefinal, drop_hour, drop_weekdays, travel_duarion are missing whereas for driver id to have the missing values subsequent Status show be 'No Cars Available'.
+```{r}
+table(uber_try$Status)
+```
+
+### So our data is ready, we can crunch a lot of information from the data.
+#### First thing could be to evaluate the performance of all the drivers
+
+```{r}
+length(unique(uber_try$Driver.id))
+```
+### There are 301 unique uber drivers. Let us first see which all drivers have completed the most no of trips and which all drivers have cancelled most no of rides.
+
+```{r}
+uber_try_driver_trip_completed_monday <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', request_weekdays == 'Monday') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_completed_tuesday <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', request_weekdays == 'Tuesday') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_completed_wednesday <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', request_weekdays == 'Wednesday') %>%
+                    tally() %>%
+                    arrange(desc(n))
+uber_try_driver_trip_completed_thursday <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', request_weekdays == 'Thursday') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_completed_friday <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', request_weekdays == 'Friday') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_completed <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+
+
+uber_try_driver_trip_cancelled_monday <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', request_weekdays == 'Monday') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_cancelled_tuesday <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', request_weekdays == 'Tuesday') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_cancelled_wednesday <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', request_weekdays == 'Wednesday') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_cancelled_thursday <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', request_weekdays == 'Thursday') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_cancelled_friday <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', request_weekdays == 'Friday') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_cancelled <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+
+
+uber_try_driver_trip_no_cars_monday <- uber_try %>%
+                    filter(Status == 'No Cars Available', request_weekdays == 'Monday') %>%
+                    tally()
+
+uber_try_driver_trip_no_cars_tuesday <- uber_try %>%
+                    filter(Status == 'No Cars Available', request_weekdays == 'Tuesday') %>%
+                    tally()
+
+uber_try_driver_trip_no_cars_wednesday <- uber_try %>%
+                    filter(Status == 'No Cars Available', request_weekdays == 'Wednesday') %>%
+                    tally()
+
+uber_try_driver_trip_no_cars_thursday <- uber_try %>%
+                    filter(Status == 'No Cars Available', request_weekdays == 'Thursday') %>%
+                    tally()
+
+uber_try_driver_trip_no_cars_friday <- uber_try %>%
+                    filter(Status == 'No Cars Available', request_weekdays == 'Friday') %>%
+                    tally()
+
+uber_try_driver_trip_no_cars <- uber_try %>%
+                    filter(Status == 'No Cars Available') %>%
+                    tally()
+
+uber_try_driver_trip_completed_duration_monday <- uber_try %>%
+                    filter(Status == 'Trip Completed', request_weekdays == 'Monday') %>%
+                    select(Driver.id, travel_duration)
+
+uber_try_driver_trip_completed_duration_tuesday <- uber_try %>%
+                    filter(Status == 'Trip Completed', request_weekdays == 'Tuesday') %>%
+                    select(Driver.id, travel_duration)
+
+uber_try_driver_trip_completed_duration_wednesday <- uber_try %>%
+                    filter(Status == 'Trip Completed', request_weekdays == 'Wednesday') %>%
+                    select(Driver.id, travel_duration)
+
+uber_try_driver_trip_completed_duration_thursday <- uber_try %>%
+                    filter(Status == 'Trip Completed', request_weekdays == 'Thursday') %>%
+                    select(Driver.id, travel_duration)
+
+uber_try_driver_trip_completed_duration_friday <- uber_try %>%
+                    filter(Status == 'Trip Completed', request_weekdays == 'Friday') %>%
+                    select(Driver.id, travel_duration)
+
+uber_try_driver_trip_completed_duration <- uber_try %>%
+                    filter(Status == 'Trip Completed') %>%
+                    select(Driver.id, travel_duration)
+
+```
+
+
+```{r}
+taylor <- data.frame(days = c('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'All'))
+
+taylor$mean_trip_completed <- c(mean(uber_try_driver_trip_completed_monday$n),  
+                                mean(uber_try_driver_trip_completed_tuesday$n),
+                                mean(uber_try_driver_trip_completed_wednesday$n),
+                                mean(uber_try_driver_trip_completed_thursday$n),
+                                mean(uber_try_driver_trip_completed_friday$n), 
+                                mean(uber_try_driver_trip_completed$n))
+
+taylor$sum_trip_completed <-  c(sum(uber_try_driver_trip_completed_monday$n),   
+                                sum(uber_try_driver_trip_completed_tuesday$n),
+                                sum(uber_try_driver_trip_completed_wednesday$n),
+                                sum(uber_try_driver_trip_completed_thursday$n),
+                                sum(uber_try_driver_trip_completed_friday$n), 
+                                sum(uber_try_driver_trip_completed$n))
+
+taylor$mean_trip_cancelled <- c(mean(uber_try_driver_trip_cancelled_monday$n),
+                                mean(uber_try_driver_trip_cancelled_tuesday$n),
+                                mean(uber_try_driver_trip_cancelled_wednesday$n),
+                                mean(uber_try_driver_trip_cancelled_thursday$n),
+                                mean(uber_try_driver_trip_cancelled_friday$n), 
+                                mean(uber_try_driver_trip_cancelled$n))
+
+taylor$sum_trip_cancelled <- c(sum(uber_try_driver_trip_cancelled_monday$n),
+                               sum(uber_try_driver_trip_cancelled_tuesday$n),
+                               sum(uber_try_driver_trip_cancelled_wednesday$n),
+                               sum(uber_try_driver_trip_cancelled_thursday$n),
+                               sum(uber_try_driver_trip_cancelled_friday$n),
+                               sum(uber_try_driver_trip_cancelled$n))
+
+taylor$sum_no_cars_available <- c(uber_try_driver_trip_no_cars_monday$n,
+                               uber_try_driver_trip_no_cars_tuesday$n,
+                               uber_try_driver_trip_no_cars_wednesday$n,
+                               uber_try_driver_trip_no_cars_thursday$n,
+                               uber_try_driver_trip_no_cars_friday$n,
+                               uber_try_driver_trip_no_cars$n)
+
+taylor$mean_trip_duration <- c(mean(uber_try_driver_trip_completed_duration_monday$travel_duration),
+                               mean(uber_try_driver_trip_completed_duration_tuesday$travel_duration),
+                               mean(uber_try_driver_trip_completed_duration_wednesday$travel_duration),
+                               mean(uber_try_driver_trip_completed_duration_thursday$travel_duration),
+                               mean(uber_try_driver_trip_completed_duration_friday$travel_duration),
+                               mean(uber_try_driver_trip_completed_duration$travel_duration))
+
+taylor$sum_trip_duration <- c(sum(uber_try_driver_trip_completed_duration_monday$travel_duration),
+                              sum(uber_try_driver_trip_completed_duration_tuesday$travel_duration),
+                              sum(uber_try_driver_trip_completed_duration_wednesday$travel_duration),
+                              sum(uber_try_driver_trip_completed_duration_thursday$travel_duration),
+                              sum(uber_try_driver_trip_completed_duration_friday$travel_duration),
+                              sum(uber_try_driver_trip_completed_duration$travel_duration))
+
+names(taylor)[1] <- 'Days'
+names(taylor)[2] <- 'Average_no_of_trips_completed'
+names(taylor)[3] <- 'Total_no_of_trips_completed'
+names(taylor)[4] <- 'Average_no_of_trips_cancelled'
+names(taylor)[5] <- 'Total_no_of_trips_cancelled'
+
+names(taylor)[7] <- 'Average_trip_duration'
+names(taylor)[8] <- 'Total_trip_duration'
+head(taylor)
+```
+
+#### This dataframe tells us about average no of trips completed, total no of trips completed, average no of trips cancelled, total no of trips cancelled, total no of trips where car was not available, average trip duration and total trip duration for Monday, Tuesday, Wednesday, Thursday, Friday and for all days.
+
+#### Average no of trips completed and average no of trips cancelled is calculated with taking the average of each driver for that day or for all days
+```{r}
+col <- c("#d35400", "#2980b9", "#2ecc71", "#f1c40f", "#2c3e50", "#7f8c8d")
+hchart(taylor,hcaes(x=Days,y=Total_no_of_trips_completed),type="column") %>% 
+  hc_title(text="Days vs Total no of trips completed",align="center") %>%
+  hc_exporting(enabled=TRUE) 
+```
+
+```{r}
+hchart(taylor,hcaes(x=Days,y=Total_no_of_trips_cancelled),type="column") %>% 
+  hc_title(text="Days vs Total no of trips cancelled",align="center") %>%
+  hc_exporting(enabled=TRUE) 
+```
+
+```{r}
+
+hchart(taylor, "treemap", hcaes(x = Days, value = Total_trip_duration,color=Total_trip_duration)) %>%
+  hc_exporting(enabled = TRUE) %>%
+  hc_title(text="Treemap of days vs Total trip duration",align="center")
+```
+```{r}
+ hchart(taylor, "treemap", hcaes(x = Days, value = sum_no_cars_available,color=sum_no_cars_available)) %>%
+  hc_exporting(enabled = TRUE) %>%
+  hc_title(text="Treemap of days vs Total trip -No cars available",align="center")
+```
+
+#### Breaking hours into 4 segments morning, afternoon, evening and night and will understand the trips performance with respect to these segments
+
+```{r}
+uber_try <- uber_try %>%
+  mutate( request_hour_segment = ifelse(request_hour %in% c(1,2,3,4,5,6), 'Night', 
+                                 ifelse(request_hour %in% c(7,8,9,10,11,12), 'Morning', 
+                                 ifelse(request_hour %in% c(13,14,15,16,17,18), 'Afternoon','Evening'))))
+head(uber_try)
+```
+
+
+```{r}
+uber_try_driver_trip_completed_morning <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', request_hour_segment == 'Morning') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_completed_afternoon <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', request_hour_segment == 'Afternoon') %>%
+                    tally() %>%
+                    arrange(desc(n))
+uber_try_driver_trip_completed_evening <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', request_hour_segment == 'Evening') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_completed_night <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', request_hour_segment == 'Night') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_completed <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+
+
+uber_try_driver_trip_cancelled_morning <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', request_hour_segment == 'Morning') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_cancelled_afternoon <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', request_hour_segment == 'Afternoon') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_cancelled_evening <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', request_hour_segment == 'Evening') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_cancelled_night <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', request_hour_segment == 'Night') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_cancelled <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+
+uber_try_driver_trip_no_cars_morning <- uber_try %>%
+                    filter(request_hour_segment == 'Morning', Status == 'No Cars Available') %>%
+                    tally() 
+
+uber_try_driver_trip_no_cars_afternoon <- uber_try %>%
+                    filter(request_hour_segment == 'Afternoon',Status == 'No Cars Available') %>%
+                    tally() 
+
+uber_try_driver_trip_no_cars_evening <- uber_try %>%
+                    filter(request_hour_segment == 'Evening', Status == 'No Cars Available') %>%
+                    tally() 
+
+uber_try_driver_trip_no_cars_night <- uber_try %>%
+                    filter(request_hour_segment == 'Night', Status == 'No Cars Available') %>%
+                    tally()
+
+uber_try_driver_trip_no_cars <- uber_try %>%
+                    filter(Status == 'No Cars Available') %>%
+                    tally()
+
+
+
+
+uber_try_driver_trip_completed_duration_morning <- uber_try %>%
+                    filter(Status == 'Trip Completed', request_hour_segment == 'Morning') %>%
+                    select(Driver.id, travel_duration)
+
+uber_try_driver_trip_completed_duration_afternoon <- uber_try %>%
+                    filter(Status == 'Trip Completed', request_hour_segment == 'Afternoon') %>%
+                    select(Driver.id, travel_duration)
+
+uber_try_driver_trip_completed_duration_evening <- uber_try %>%
+                    filter(Status == 'Trip Completed', request_hour_segment == 'Evening') %>%
+                    select(Driver.id, travel_duration)
+
+uber_try_driver_trip_completed_duration_night <- uber_try %>%
+                    filter(Status == 'Trip Completed', request_hour_segment == 'Night') %>%
+                    select(Driver.id, travel_duration)
+
+uber_try_driver_trip_completed_duration <- uber_try %>%
+                    filter(Status == 'Trip Completed') %>%
+                    select(Driver.id, travel_duration)
+```
+
+
+
+```{r}
+swift <- data.frame(days = c('Morning', 'Afternoon', 'Evening', 'Night', 'All'))
+
+swift$mean_trip_completed <- c(mean(uber_try_driver_trip_completed_morning$n), 
+                               mean(uber_try_driver_trip_completed_afternoon$n),
+                               mean(uber_try_driver_trip_completed_evening$n),
+                               mean(uber_try_driver_trip_completed_night$n),
+                               mean(uber_try_driver_trip_completed$n))
+
+swift$sum_trip_completed <-  c(sum(uber_try_driver_trip_completed_morning$n), 
+                               sum(uber_try_driver_trip_completed_afternoon$n),
+                               sum(uber_try_driver_trip_completed_evening$n),
+                               sum(uber_try_driver_trip_completed_night$n), 
+                               sum(uber_try_driver_trip_completed$n))
+
+swift$mean_trip_cancelled <- c(mean(uber_try_driver_trip_cancelled_morning$n),
+                               mean(uber_try_driver_trip_cancelled_afternoon$n),
+                               mean(uber_try_driver_trip_cancelled_evening$n),
+                               mean(uber_try_driver_trip_cancelled_night$n),
+                               mean(uber_try_driver_trip_cancelled$n))
+
+swift$sum_trip_cancelled <- c(sum(uber_try_driver_trip_cancelled_morning$n),
+                              sum(uber_try_driver_trip_cancelled_afternoon$n),
+                              sum(uber_try_driver_trip_cancelled_evening$n),
+                              sum(uber_try_driver_trip_cancelled_night$n), 
+                              sum(uber_try_driver_trip_cancelled$n))
+
+swift$sum_trip_no_cars <- c(uber_try_driver_trip_no_cars_morning$n,
+                            uber_try_driver_trip_no_cars_afternoon$n,
+                            uber_try_driver_trip_no_cars_evening$n,
+                            uber_try_driver_trip_no_cars_night$n, 
+                            uber_try_driver_trip_no_cars$n)
+
+
+swift$mean_trip_duration <- c(mean(uber_try_driver_trip_completed_duration_morning$travel_duration),
+                              mean(uber_try_driver_trip_completed_duration_afternoon$travel_duration),
+                              mean(uber_try_driver_trip_completed_duration_evening$travel_duration),
+                              mean(uber_try_driver_trip_completed_duration_night$travel_duration),
+                              mean(uber_try_driver_trip_completed_duration$travel_duration))
+
+swift$sum_trip_duration <- c(sum(uber_try_driver_trip_completed_duration_morning$travel_duration),
+                             sum(uber_try_driver_trip_completed_duration_afternoon$travel_duration),
+                             sum(uber_try_driver_trip_completed_duration_evening$travel_duration),
+                             sum(uber_try_driver_trip_completed_duration_night$travel_duration),
+                             sum(uber_try_driver_trip_completed_duration$travel_duration))
+
+names(swift)[1] <- 'Day_frame'
+names(swift)[2] <- 'Average_no_of_trips_completed'
+names(swift)[3] <- 'Total_no_of_trips_completed'
+names(swift)[4] <- 'Average_no_of_trips_cancelled'
+names(swift)[5] <- 'Total_no_of_trips_cancelled'
+names(swift)[7] <- 'Average_trip_duration'
+names(swift)[8] <- 'Total_trip_duration'
+head(swift)
+```
+
+#### This dataframe tells us about average no of trips completed, total no of trips completed, average no of trips cancelled, total no of trips cancelled, total no of trips where car was not available, average trip duration and total trip duration for Morning, Afternoon, Evening, Night and for all days.
+
+#### Average no of trips completed and average no of trips cancelled is calculated with taking the average of each driver for that day-frame or for all day-frame
+```{r}
+hchart(swift,hcaes(x=Day_frame,y=Total_no_of_trips_completed),type="column") %>% 
+  hc_title(text="Days-frame vs Total no of trips completed",align="center") %>%
+  hc_exporting(enabled=TRUE)
+```
+
+```{r}
+hchart(swift,hcaes(x=Day_frame,y=Total_no_of_trips_cancelled),type="column") %>% 
+  hc_title(text="Days-frame vs Total no of trips cancelled",align="center") %>%
+  hc_exporting(enabled=TRUE) 
+```
+
+```{r}
+hchart(swift, "treemap", hcaes(x = Day_frame, value = Total_trip_duration,color=Total_trip_duration)) %>%
+  hc_exporting(enabled = TRUE) %>%
+  hc_title(text="Treemap of days-frame vs Total trip duration",align="center")
+```
+```{r}
+ hchart(swift, "treemap", hcaes(x = Day_frame, value = sum_trip_no_cars,color=sum_trip_no_cars)) %>%
+  hc_exporting(enabled = TRUE) %>%
+  hc_title(text="Treemap of day-frame vs Total trip -No cars available",align="center")
+```
+
+### Below is the summary of trips from city
+```{r}
+uber_try_driver_trip_completed_monday_city <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', request_weekdays == 'Monday', Pickup.point == 'City') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_completed_tuesday_city <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', request_weekdays == 'Tuesday', Pickup.point == 'City') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_completed_wednesday_city <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', request_weekdays == 'Wednesday', Pickup.point == 'City') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_completed_thursday_city <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', request_weekdays == 'Thursday', Pickup.point == 'City') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_completed_friday_city <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', request_weekdays == 'Friday', Pickup.point == 'City') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_completed_city <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', Pickup.point == 'City') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+
+
+uber_try_driver_trip_cancelled_monday_city <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', request_weekdays == 'Monday', Pickup.point == 'City') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_cancelled_tuesday_city <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', request_weekdays == 'Tuesday', Pickup.point == 'City') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_cancelled_wednesday_city <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', request_weekdays == 'Wednesday', Pickup.point == 'City') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_cancelled_thursday_city <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', request_weekdays == 'Thursday', Pickup.point == 'City') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_cancelled_friday_city <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', request_weekdays == 'Friday', Pickup.point == 'City') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_cancelled_city <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', Pickup.point == 'City') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+
+uber_try_driver_trip_no_cars_monday_city <- uber_try %>%
+                    filter(Status == 'No Cars Available', request_weekdays == 'Monday', Pickup.point == 'City') %>%
+                    tally()
+
+uber_try_driver_trip_no_cars_tuesday_city <- uber_try %>%
+                    filter(Status == 'No Cars Available', request_weekdays == 'Tuesday', Pickup.point == 'City') %>%
+                    tally()
+
+uber_try_driver_trip_no_cars_wednesday_city <- uber_try %>%
+                    filter(Status == 'No Cars Available', request_weekdays == 'Wednesday', Pickup.point == 'City') %>%
+                    tally()
+
+uber_try_driver_trip_no_cars_thursday_city <- uber_try %>%
+                    filter(Status == 'No Cars Available', request_weekdays == 'Thursday', Pickup.point == 'City') %>%
+                    tally()
+
+uber_try_driver_trip_no_cars_friday_city <- uber_try %>%
+                    filter(Status == 'No Cars Available', request_weekdays == 'Friday', Pickup.point == 'City') %>%
+                    tally()
+
+uber_try_driver_trip_no_cars_city <- uber_try %>%
+                    filter(Status == 'No Cars Available', Pickup.point == 'City') %>%
+                    tally()
+
+
+
+uber_try_driver_trip_completed_duration_monday_city <- uber_try %>%
+                    filter(Status == 'Trip Completed', request_weekdays == 'Monday', Pickup.point == 'City') %>%
+                    select(Driver.id, travel_duration)
+
+uber_try_driver_trip_completed_duration_tuesday_city <- uber_try %>%
+                    filter(Status == 'Trip Completed', request_weekdays == 'Tuesday', Pickup.point == 'City') %>%
+                    select(Driver.id, travel_duration)
+
+uber_try_driver_trip_completed_duration_wednesday_city <- uber_try %>%
+                    filter(Status == 'Trip Completed', request_weekdays == 'Wednesday', Pickup.point == 'City') %>%
+                    select(Driver.id, travel_duration)
+
+uber_try_driver_trip_completed_duration_thursday_city <- uber_try %>%
+                    filter(Status == 'Trip Completed', request_weekdays == 'Thursday', Pickup.point == 'City') %>%
+                    select(Driver.id, travel_duration)
+
+uber_try_driver_trip_completed_duration_friday_city <- uber_try %>%
+                    filter(Status == 'Trip Completed', request_weekdays == 'Friday', Pickup.point == 'City') %>%
+                    select(Driver.id, travel_duration)
+
+uber_try_driver_trip_completed_duration_city <- uber_try %>%
+                    filter(Status == 'Trip Completed', Pickup.point == 'City') %>%
+                    select(Driver.id, travel_duration)
+
+```
+
+
+```{r}
+ambrose <- data.frame(days = c('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'All'))
+
+ambrose$mean_trip_completed <- c(mean(uber_try_driver_trip_completed_monday_city$n), 
+                                 mean(uber_try_driver_trip_completed_tuesday_city$n),
+                                 mean(uber_try_driver_trip_completed_wednesday_city$n),
+                                 mean(uber_try_driver_trip_completed_thursday_city$n),
+                                 mean(uber_try_driver_trip_completed_friday_city$n),
+                                 mean(uber_try_driver_trip_completed_city$n))
+
+ambrose$sum_trip_completed <-  c(sum(uber_try_driver_trip_completed_monday_city$n),
+                                 sum(uber_try_driver_trip_completed_tuesday_city$n),
+                                 sum(uber_try_driver_trip_completed_wednesday_city$n),
+                                 sum(uber_try_driver_trip_completed_thursday_city$n),
+                                 sum(uber_try_driver_trip_completed_friday_city$n),
+                                 sum(uber_try_driver_trip_completed_city$n))
+
+ambrose$mean_trip_cancelled <- c(mean(uber_try_driver_trip_cancelled_monday_city$n),
+                                 mean(uber_try_driver_trip_cancelled_tuesday_city$n),
+                                 mean(uber_try_driver_trip_cancelled_wednesday_city$n),
+                                 mean(uber_try_driver_trip_cancelled_thursday_city$n),
+                                 mean(uber_try_driver_trip_cancelled_friday_city$n), 
+                                 mean(uber_try_driver_trip_cancelled_city$n))
+
+ambrose$sum_trip_cancelled <- c(sum(uber_try_driver_trip_cancelled_monday_city$n),
+                                sum(uber_try_driver_trip_cancelled_tuesday_city$n),
+                                sum(uber_try_driver_trip_cancelled_wednesday_city$n),
+                                sum(uber_try_driver_trip_cancelled_thursday_city$n),
+                                sum(uber_try_driver_trip_cancelled_friday_city$n),  
+                                sum(uber_try_driver_trip_cancelled_city$n))
+
+ambrose$sum_trip_no_cars <- c(uber_try_driver_trip_no_cars_monday_city$n,
+                              uber_try_driver_trip_no_cars_tuesday_city$n,
+                              uber_try_driver_trip_no_cars_wednesday_city$n,
+                              uber_try_driver_trip_no_cars_thursday_city$n,
+                              uber_try_driver_trip_no_cars_friday_city$n,  
+                              uber_try_driver_trip_no_cars_city$n)
+
+ambrose$mean_trip_duration <- c(mean(uber_try_driver_trip_completed_duration_monday_city$travel_duration),
+                                mean(uber_try_driver_trip_completed_duration_tuesday_city$travel_duration),
+                                mean(uber_try_driver_trip_completed_duration_wednesday_city$travel_duration),
+                                mean(uber_try_driver_trip_completed_duration_thursday_city$travel_duration),
+                                mean(uber_try_driver_trip_completed_duration_friday_city$travel_duration),
+                                mean(uber_try_driver_trip_completed_duration_city$travel_duration))
+
+ambrose$sum_trip_duration <- c(sum(uber_try_driver_trip_completed_duration_monday_city$travel_duration),
+                               sum(uber_try_driver_trip_completed_duration_tuesday_city$travel_duration),
+                               sum(uber_try_driver_trip_completed_duration_wednesday_city$travel_duration),
+                               sum(uber_try_driver_trip_completed_duration_thursday_city$travel_duration),
+                               sum(uber_try_driver_trip_completed_duration_friday_city$travel_duration),
+                               sum(uber_try_driver_trip_completed_duration_city$travel_duration))
+
+names(ambrose)[1] <- 'Days'
+names(ambrose)[2] <- 'Average_no_of_trips_completed'
+names(ambrose)[3] <- 'Total_no_of_trips_completed'
+names(ambrose)[4] <- 'Average_no_of_trips_cancelled'
+names(ambrose)[5] <- 'Total_no_of_trips_cancelled'
+names(ambrose)[7] <- 'Average_trip_duration'
+names(ambrose)[8] <- 'Total_trip_duration'
+head(ambrose)
+```
+#### This dataframe tells us about average no of trips completed, total no of trips completed, average no of trips cancelled, total no of trips cancelled, total no of trips where car was not available, average trip duration and total trip duration for Monday, Tuesday, Wednesday, Thursday, Friday and for all days cosidering pickup point is city
+
+#### Average no of trips completed and average no of trips cancelled is calculated with taking the average of each driver for that day or for all days
+```{r}
+hchart(ambrose,hcaes(x=Days,y=Total_no_of_trips_completed),type="column") %>% 
+  hc_title(text="Days vs Total no of trips completed, pickpoint is city",align="center") %>%
+  hc_exporting(enabled=TRUE)
+```
+
+```{r}
+hchart(ambrose,hcaes(x=Days,y=Total_no_of_trips_cancelled),type="column") %>% 
+  hc_title(text="Days vs Total no of trips cancelled, pickpoint is city",align="center") %>%
+  hc_exporting(enabled=TRUE)
+```
+
+
+```{r}
+hchart(ambrose, "treemap", hcaes(x = Days, value = Total_trip_duration,color=Total_trip_duration)) %>%
+  hc_exporting(enabled = TRUE) %>%
+  hc_title(text="Treemap of days vs Total trip duration, pickpoint is city",align="center")
+```
+
+```{r}
+hchart(ambrose, "treemap", hcaes(x = Days, value = sum_trip_no_cars,color=sum_trip_no_cars)) %>%
+  hc_exporting(enabled = TRUE) %>%
+  hc_title(text="Treemap of days vs sum_trip_no_cars, pickpoint is city",align="center")
+```
+
+### Below is the summary of trips from airport
+```{r}
+uber_try_driver_trip_completed_monday_airport <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', request_weekdays == 'Monday', Pickup.point == 'Airport') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_completed_tuesday_airport <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', request_weekdays == 'Tuesday', Pickup.point == 'Airport') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_completed_wednesday_airport <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', request_weekdays == 'Wednesday', Pickup.point == 'Airport') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_completed_thursday_airport <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', request_weekdays == 'Thursday', Pickup.point == 'Airport') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_completed_friday_airport <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', request_weekdays == 'Friday', Pickup.point == 'Airport') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_completed_airport <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', Pickup.point == 'Airport') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+
+
+uber_try_driver_trip_cancelled_monday_airport <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', request_weekdays == 'Monday', Pickup.point == 'Airport') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_cancelled_tuesday_airport <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', request_weekdays == 'Tuesday', Pickup.point == 'Airport') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_cancelled_wednesday_airport <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', request_weekdays == 'Wednesday', Pickup.point == 'Airport') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_cancelled_thursday_airport <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', request_weekdays == 'Thursday', Pickup.point == 'Airport') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_cancelled_friday_airport <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', request_weekdays == 'Friday', Pickup.point == 'Airport') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_cancelled_airport <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', Pickup.point == 'Airport') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_no_cars_monday_airport <- uber_try %>%
+                    filter(Status == 'No Cars Available', request_weekdays == 'Monday', Pickup.point == 'Airport') %>%
+                    tally()
+
+uber_try_driver_trip_no_cars_tuesday_airport <- uber_try %>%
+                    filter(Status == 'No Cars Available', request_weekdays == 'Tuesday', Pickup.point == 'Airport') %>%
+                    tally()
+
+uber_try_driver_trip_no_cars_wednesday_airport <- uber_try %>%
+                    filter(Status == 'No Cars Available', request_weekdays == 'Wednesday', Pickup.point == 'Airport') %>%
+                    tally()
+
+uber_try_driver_trip_no_cars_thursday_airport <- uber_try %>%
+                    filter(Status == 'No Cars Available', request_weekdays == 'Thursday', Pickup.point == 'Airport') %>%
+                    tally()
+
+uber_try_driver_trip_no_cars_friday_airport <- uber_try %>%
+                    filter(Status == 'No Cars Available', request_weekdays == 'Friday', Pickup.point == 'Airport') %>%
+                    tally()
+
+uber_try_driver_trip_no_cars_airport <- uber_try %>%
+                    filter(Status == 'No Cars Available', Pickup.point == 'Airport') %>%
+                    tally()
+
+
+uber_try_driver_trip_completed_duration_monday_airport <- uber_try %>%
+                    filter(Status == 'Trip Completed', request_weekdays == 'Monday', Pickup.point == 'Airport') %>%
+                    select(Driver.id, travel_duration)
+
+uber_try_driver_trip_completed_duration_tuesday_airport <- uber_try %>%
+                    filter(Status == 'Trip Completed', request_weekdays == 'Tuesday', Pickup.point == 'Airport') %>%
+                    select(Driver.id, travel_duration)
+
+uber_try_driver_trip_completed_duration_wednesday_airport <- uber_try %>%
+                    filter(Status == 'Trip Completed', request_weekdays == 'Wednesday', Pickup.point == 'Airport') %>%
+                    select(Driver.id, travel_duration)
+
+uber_try_driver_trip_completed_duration_thursday_airport <- uber_try %>%
+                    filter(Status == 'Trip Completed', request_weekdays == 'Thursday', Pickup.point == 'Airport') %>%
+                    select(Driver.id, travel_duration)
+
+uber_try_driver_trip_completed_duration_friday_airport <- uber_try %>%
+                    filter(Status == 'Trip Completed', request_weekdays == 'Friday', Pickup.point == 'Airport') %>%
+                    select(Driver.id, travel_duration)
+
+uber_try_driver_trip_completed_duration_airport <- uber_try %>%
+                    filter(Status == 'Trip Completed', Pickup.point == 'Airport') %>%
+                    select(Driver.id, travel_duration)
+```
+
+```{r}
+dean <- data.frame(days = c('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'All'))
+
+dean$mean_trip_completed <- c(mean(uber_try_driver_trip_completed_monday_airport$n), 
+                              mean(uber_try_driver_trip_completed_tuesday_airport$n),
+                              mean(uber_try_driver_trip_completed_wednesday_airport$n),
+                              mean(uber_try_driver_trip_completed_thursday_airport$n),
+                              mean(uber_try_driver_trip_completed_friday_airport$n),
+                              mean(uber_try_driver_trip_completed_airport$n))
+
+dean$sum_trip_completed <-  c(sum(uber_try_driver_trip_completed_monday_airport$n),
+                              sum(uber_try_driver_trip_completed_tuesday_airport$n),
+                              sum(uber_try_driver_trip_completed_wednesday_airport$n),
+                              sum(uber_try_driver_trip_completed_thursday_airport$n),
+                              sum(uber_try_driver_trip_completed_friday_airport$n),
+                              sum(uber_try_driver_trip_completed_airport$n))
+
+dean$mean_trip_cancelled <- c(mean(uber_try_driver_trip_cancelled_monday_airport$n),
+                              mean(uber_try_driver_trip_cancelled_tuesday_airport$n),
+                              mean(uber_try_driver_trip_cancelled_wednesday_airport$n),
+                              mean(uber_try_driver_trip_cancelled_thursday_airport$n),
+                              mean(uber_try_driver_trip_cancelled_friday_airport$n), 
+                              mean(uber_try_driver_trip_cancelled_airport$n))
+
+dean$sum_trip_cancelled <- c(sum(uber_try_driver_trip_cancelled_monday_airport$n),
+                             sum(uber_try_driver_trip_cancelled_tuesday_airport$n),
+                             sum(uber_try_driver_trip_cancelled_wednesday_airport$n),
+                             sum(uber_try_driver_trip_cancelled_thursday_airport$n),
+                             sum(uber_try_driver_trip_cancelled_friday_airport$n),
+                             sum(uber_try_driver_trip_cancelled_airport$n))
+
+dean$sum_trip_no_cars <- c(uber_try_driver_trip_no_cars_monday_airport$n,
+                           uber_try_driver_trip_no_cars_tuesday_airport$n,
+                           uber_try_driver_trip_no_cars_wednesday_airport$n,
+                           uber_try_driver_trip_no_cars_thursday_airport$n,
+                           uber_try_driver_trip_no_cars_friday_airport$n,
+                           uber_try_driver_trip_no_cars_airport$n)
+
+dean$mean_trip_duration <- c(mean(uber_try_driver_trip_completed_duration_monday_airport$travel_duration),
+                             mean(uber_try_driver_trip_completed_duration_tuesday_airport$travel_duration),
+                             mean(uber_try_driver_trip_completed_duration_wednesday_airport$travel_duration),
+                             mean(uber_try_driver_trip_completed_duration_thursday_airport$travel_duration),
+                             mean(uber_try_driver_trip_completed_duration_friday_airport$travel_duration),
+                             mean(uber_try_driver_trip_completed_duration_airport$travel_duration))
+
+dean$sum_trip_duration <- c(sum(uber_try_driver_trip_completed_duration_monday_airport$travel_duration),
+                            sum(uber_try_driver_trip_completed_duration_tuesday_airport$travel_duration),
+                            sum(uber_try_driver_trip_completed_duration_wednesday_airport$travel_duration),
+                            sum(uber_try_driver_trip_completed_duration_thursday_airport$travel_duration),
+                            sum(uber_try_driver_trip_completed_duration_friday_airport$travel_duration),
+                            sum(uber_try_driver_trip_completed_duration_airport$travel_duration))
+
+names(dean)[1] <- 'Days'
+names(dean)[2] <- 'Average_no_of_trips_completed'
+names(dean)[3] <- 'Total_no_of_trips_completed'
+names(dean)[4] <- 'Average_no_of_trips_cancelled'
+names(dean)[5] <- 'Total_no_of_trips_cancelled'
+names(dean)[7] <- 'Average_trip_duration'
+names(dean)[8] <- 'Total_trip_duration'
+head(dean)
+```
+#### This dataframe tells us about average no of trips completed, total no of trips completed, average no of trips cancelled, total no of trips cancelled, total no of trips where car was not available, average trip duration and total trip duration for Monday, Tuesday, Wednesday, Thursday, Friday and for all days cosidering pickup point is airport
+
+#### Average no of trips completed and average no of trips cancelled is calculated with taking the average of each driver for that day or for all days
+```{r}
+hchart(dean,hcaes(x=Days,y=Total_no_of_trips_completed),type="column") %>% 
+  hc_title(text="Days vs Total no of trips completed, pickpoint is airport",align="center") %>%
+  hc_exporting(enabled=TRUE)
+```
+
+```{r}
+hchart(dean,hcaes(x=Days,y=Total_no_of_trips_cancelled),type="column") %>% 
+  hc_title(text="Days vs Total_no_of_trips_cancelled, pickpoint is airport",align="center") %>%
+  hc_exporting(enabled=TRUE)
+```
+
+```{r}
+hchart(dean, "treemap", hcaes(x = Days, value = Total_trip_duration,color=Total_trip_duration)) %>%
+  hc_exporting(enabled = TRUE) %>%
+  hc_title(text="Treemap of days vs Total trip duration, pickpoint is airport",align="center")
+```
+
+```{r}
+hchart(dean, "treemap", hcaes(x = Days, value = sum_trip_no_cars,color=sum_trip_no_cars)) %>%
+  hc_exporting(enabled = TRUE) %>%
+  hc_title(text="Treemap of days vs sum_trip_no_cars, pickpoint is airport",align="center")
+```
+
+
+
+
+### Below is the summary of trips from city
+```{r}
+uber_try_driver_trip_completed_morning_city <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', request_hour_segment == 'Morning', Pickup.point == 'City') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_completed_afternoon_city <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', request_hour_segment == 'Afternoon', Pickup.point == 'City') %>%
+                    tally() %>%
+                    arrange(desc(n))
+uber_try_driver_trip_completed_evening_city <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', request_hour_segment == 'Evening', Pickup.point == 'City') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_completed_night_city <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', request_hour_segment == 'Night', Pickup.point == 'City') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_completed_city <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', Pickup.point == 'City') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+
+
+uber_try_driver_trip_cancelled_morning_city <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', request_hour_segment == 'Morning', Pickup.point == 'City') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_cancelled_afternoon_city <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', request_hour_segment == 'Afternoon', Pickup.point == 'City') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_cancelled_evening_city <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', request_hour_segment == 'Evening', Pickup.point == 'City') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_cancelled_night_city <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', request_hour_segment == 'Night', Pickup.point == 'City') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_cancelled_city <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', Pickup.point == 'City') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_no_cars_morning_city <- uber_try %>%
+                    filter(Status == 'No Cars Available', request_hour_segment == 'Morning', Pickup.point == 'City') %>%
+                    tally()
+
+uber_try_driver_trip_no_cars_afternoon_city <- uber_try %>%
+                    filter(Status == 'No Cars Available', request_hour_segment == 'Afternoon', Pickup.point == 'City') %>%
+                    tally()
+
+uber_try_driver_trip_no_cars_evening_city <- uber_try %>%
+                    filter(Status == 'No Cars Available', request_hour_segment == 'Evening', Pickup.point == 'City') %>%
+                    tally()
+
+uber_try_driver_trip_no_cars_night_city <- uber_try %>%
+                    filter(Status == 'No Cars Available', request_hour_segment == 'Night', Pickup.point == 'City') %>%
+                    tally()
+
+uber_try_driver_trip_no_cars_city <- uber_try %>%
+                    filter(Status == 'No Cars Available', Pickup.point == 'City') %>%
+                    tally()
+
+
+
+uber_try_driver_trip_completed_duration_morning_city <- uber_try %>%
+                    filter(Status == 'Trip Completed', request_hour_segment == 'Morning', Pickup.point == 'City') %>%
+                    select(Driver.id, travel_duration)
+
+uber_try_driver_trip_completed_duration_afternoon_city <- uber_try %>%
+                    filter(Status == 'Trip Completed', request_hour_segment == 'Afternoon', Pickup.point == 'City') %>%
+                    select(Driver.id, travel_duration)
+
+uber_try_driver_trip_completed_duration_evening_city <- uber_try %>%
+                    filter(Status == 'Trip Completed', request_hour_segment == 'Evening', Pickup.point == 'City') %>%
+                    select(Driver.id, travel_duration)
+
+uber_try_driver_trip_completed_duration_night_city <- uber_try %>%
+                    filter(Status == 'Trip Completed', request_hour_segment == 'Night', Pickup.point == 'City') %>%
+                    select(Driver.id, travel_duration)
+
+uber_try_driver_trip_completed_duration_city <- uber_try %>%
+                    filter(Status == 'Trip Completed', Pickup.point == 'City') %>%
+                    select(Driver.id, travel_duration)
+```
+
+
+```{r}
+rollins <- data.frame(days = c('Morning', 'Afternoon', 'Evening', 'Night', 'All'))
+
+rollins$mean_trip_completed <- c(mean(uber_try_driver_trip_completed_morning_city$n), 
+                               mean(uber_try_driver_trip_completed_afternoon_city$n),
+                               mean(uber_try_driver_trip_completed_evening_city$n),
+                               mean(uber_try_driver_trip_completed_night_city$n),
+                               mean(uber_try_driver_trip_completed_city$n))
+
+rollins$sum_trip_completed <-  c(sum(uber_try_driver_trip_completed_morning_city$n), 
+                               sum(uber_try_driver_trip_completed_afternoon_city$n),
+                               sum(uber_try_driver_trip_completed_evening_city$n),
+                               sum(uber_try_driver_trip_completed_night_city$n), 
+                               sum(uber_try_driver_trip_completed_city$n))
+
+rollins$mean_trip_cancelled <- c(mean(uber_try_driver_trip_cancelled_morning_city$n),
+                               mean(uber_try_driver_trip_cancelled_afternoon_city$n),
+                               mean(uber_try_driver_trip_cancelled_evening_city$n),
+                               mean(uber_try_driver_trip_cancelled_night_city$n),
+                               mean(uber_try_driver_trip_cancelled_city$n))
+
+rollins$sum_trip_cancelled <- c(sum(uber_try_driver_trip_cancelled_morning_city$n),
+                              sum(uber_try_driver_trip_cancelled_afternoon_city$n),
+                              sum(uber_try_driver_trip_cancelled_evening_city$n),
+                              sum(uber_try_driver_trip_cancelled_night_city$n), 
+                              sum(uber_try_driver_trip_cancelled_city$n))
+
+rollins$sum_trip_no_cars <- c(uber_try_driver_trip_no_cars_morning_city$n,
+                              uber_try_driver_trip_no_cars_afternoon_city$n,
+                              uber_try_driver_trip_no_cars_evening_city$n,
+                              uber_try_driver_trip_no_cars_night_city$n, 
+                              uber_try_driver_trip_no_cars_city$n)
+
+rollins$mean_trip_duration <- c(mean(uber_try_driver_trip_completed_duration_morning_city$travel_duration),
+                              mean(uber_try_driver_trip_completed_duration_afternoon_city$travel_duration),
+                              mean(uber_try_driver_trip_completed_duration_evening_city$travel_duration),
+                              mean(uber_try_driver_trip_completed_duration_night_city$travel_duration),
+                              mean(uber_try_driver_trip_completed_duration_city$travel_duration))
+
+rollins$sum_trip_duration <- c(sum(uber_try_driver_trip_completed_duration_morning_city$travel_duration),
+                             sum(uber_try_driver_trip_completed_duration_afternoon_city$travel_duration),
+                             sum(uber_try_driver_trip_completed_duration_evening_city$travel_duration),
+                             sum(uber_try_driver_trip_completed_duration_night_city$travel_duration),
+                             sum(uber_try_driver_trip_completed_duration_city$travel_duration))
+
+names(rollins)[1] <- 'Day_frame'
+names(rollins)[2] <- 'Average_no_of_trips_completed'
+names(rollins)[3] <- 'Total_no_of_trips_completed'
+names(rollins)[4] <- 'Average_no_of_trips_cancelled'
+names(rollins)[5] <- 'Total_no_of_trips_cancelled'
+names(rollins)[7] <- 'Average_trip_duration'
+names(rollins)[8] <- 'Total_trip_duration'
+head(rollins)
+```
+
+#### This dataframe tells us about average no of trips completed, total no of trips completed, average no of trips cancelled, total no of trips cancelled, total no of trips where car was not available, average trip duration and total trip duration for Morning, Afternoon, Evening, Night and for all days cosidering pickup point is city
+
+```{r}
+hchart(rollins,hcaes(x=Day_frame,y=Total_no_of_trips_completed),type="column") %>% 
+  hc_title(text="Day-frame vs Total no of trips completed, pickpoint is city",align="center") %>%
+  hc_exporting(enabled=TRUE)
+```
+
+```{r}
+hchart(rollins,hcaes(x=Day_frame,y=Total_no_of_trips_cancelled),type="column") %>% 
+  hc_title(text="Day-frame vs Total no of trips cacelled, pickpoint is city",align="center") %>%
+  hc_exporting(enabled=TRUE)
+```
+
+```{r}
+hchart(rollins, "treemap", hcaes(x = Day_frame, value = Total_trip_duration,color=Total_trip_duration)) %>%
+  hc_exporting(enabled = TRUE) %>%
+  hc_title(text="Treemap of day-frame vs sum_trip_no_cars, pickpoint is airport",align="center")
+```
+
+```{r}
+hchart(rollins, "treemap", hcaes(x = Day_frame, value = sum_trip_no_cars,color=sum_trip_no_cars)) %>%
+  hc_exporting(enabled = TRUE) %>%
+  hc_title(text="Treemap of day-frame vs sum_trip_no_cars, pickpoint is airport",align="center")
+```
+
+
+
+#### Average no of trips completed and average no of trips cancelled is calculated with taking the average of each driver for that day-frame or for all day-frame
+
+
+
+#### Below is the summary of trips from airport
+```{r}
+uber_try_driver_trip_completed_morning_airport <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', request_hour_segment == 'Morning', Pickup.point == 'Airport') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_completed_afternoon_airport <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', request_hour_segment == 'Afternoon', Pickup.point == 'Airport') %>%
+                    tally() %>%
+                    arrange(desc(n))
+uber_try_driver_trip_completed_evening_airport <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', request_hour_segment == 'Evening', Pickup.point == 'Airport') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_completed_night_airport <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', request_hour_segment == 'Night', Pickup.point == 'Airport') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_completed_airport <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Trip Completed', Pickup.point == 'Airport') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+
+
+uber_try_driver_trip_cancelled_morning_airport <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', request_hour_segment == 'Morning', Pickup.point == 'Airport') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_cancelled_afternoon_airport <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', request_hour_segment == 'Afternoon', Pickup.point == 'Airport') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_cancelled_evening_airport <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', request_hour_segment == 'Evening', Pickup.point == 'Airport') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_cancelled_night_airport <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', request_hour_segment == 'Night', Pickup.point == 'Airport') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_cancelled_airport <- uber_try %>%
+                    group_by(Driver.id) %>%
+                    filter(Status == 'Cancelled', Pickup.point == 'Airport') %>%
+                    tally() %>%
+                    arrange(desc(n))
+
+uber_try_driver_trip_no_cars_morning_airport <- uber_try %>%
+                    filter(Status == 'No Cars Available', request_hour_segment == 'Morning', Pickup.point == 'Airport') %>%
+                    tally() 
+
+uber_try_driver_trip_no_cars_afternoon_airport <- uber_try %>%
+                    filter(Status == 'No Cars Available', request_hour_segment == 'Afternoon', Pickup.point == 'Airport') %>%
+                    tally() 
+
+uber_try_driver_trip_no_cars_evening_airport <- uber_try %>%
+                    filter(Status == 'No Cars Available', request_hour_segment == 'Evening', Pickup.point == 'Airport') %>%
+                    tally() 
+
+uber_try_driver_trip_no_cars_night_airport <- uber_try %>%
+                    filter(Status == 'No Cars Available', request_hour_segment == 'Night', Pickup.point == 'Airport') %>%
+                    tally() 
+
+uber_try_driver_trip_no_cars_airport <- uber_try %>%
+                    filter(Status == 'No Cars Available', Pickup.point == 'Airport') %>%
+                    tally() 
+
+
+
+uber_try_driver_trip_completed_duration_morning_airport <- uber_try %>%
+                    filter(Status == 'Trip Completed', request_hour_segment == 'Morning', Pickup.point == 'Airport') %>%
+                    select(Driver.id, travel_duration)
+
+uber_try_driver_trip_completed_duration_afternoon_airport <- uber_try %>%
+                    filter(Status == 'Trip Completed', request_hour_segment == 'Afternoon', Pickup.point == 'Airport') %>%
+                    select(Driver.id, travel_duration)
+
+uber_try_driver_trip_completed_duration_evening_airport <- uber_try %>%
+                    filter(Status == 'Trip Completed', request_hour_segment == 'Evening', Pickup.point == 'Airport') %>%
+                    select(Driver.id, travel_duration)
+
+uber_try_driver_trip_completed_duration_night_airport <- uber_try %>%
+                    filter(Status == 'Trip Completed', request_hour_segment == 'Night', Pickup.point == 'Airport') %>%
+                    select(Driver.id, travel_duration)
+
+uber_try_driver_trip_completed_duration_airport <- uber_try %>%
+                    filter(Status == 'Trip Completed', Pickup.point == 'Airport') %>%
+                    select(Driver.id, travel_duration)
+```
+
+
+```{r}
+seth <- data.frame(days = c('Morning', 'Afternoon', 'Evening', 'Night', 'All'))
+
+seth$mean_trip_completed <- c(mean(uber_try_driver_trip_completed_morning_airport$n), 
+                               mean(uber_try_driver_trip_completed_afternoon_airport$n),
+                               mean(uber_try_driver_trip_completed_evening_airport$n),
+                               mean(uber_try_driver_trip_completed_night_airport$n),
+                               mean(uber_try_driver_trip_completed_airport$n))
+
+seth$sum_trip_completed <-  c(sum(uber_try_driver_trip_completed_morning_airport$n), 
+                               sum(uber_try_driver_trip_completed_afternoon_airport$n),
+                               sum(uber_try_driver_trip_completed_evening_airport$n),
+                               sum(uber_try_driver_trip_completed_night_airport$n), 
+                               sum(uber_try_driver_trip_completed_airport$n))
+
+seth$mean_trip_cancelled <- c(mean(uber_try_driver_trip_cancelled_morning_airport$n),
+                               mean(uber_try_driver_trip_cancelled_afternoon_airport$n),
+                               mean(uber_try_driver_trip_cancelled_evening_airport$n),
+                               mean(uber_try_driver_trip_cancelled_night_airport$n),
+                               mean(uber_try_driver_trip_cancelled_airport$n))
+
+seth$sum_trip_cancelled <- c(sum(uber_try_driver_trip_cancelled_morning_airport$n),
+                              sum(uber_try_driver_trip_cancelled_afternoon_airport$n),
+                              sum(uber_try_driver_trip_cancelled_evening_airport$n),
+                              sum(uber_try_driver_trip_cancelled_night_airport$n), 
+                              sum(uber_try_driver_trip_cancelled_airport$n))
+
+seth$sum_trip_no_cars <- c(uber_try_driver_trip_no_cars_morning_airport$n,
+                           uber_try_driver_trip_no_cars_afternoon_airport$n,
+                           uber_try_driver_trip_no_cars_evening_airport$n,
+                           uber_try_driver_trip_no_cars_night_airport$n, 
+                           uber_try_driver_trip_no_cars_airport$n)
+
+
+seth$mean_trip_duration <- c(mean(uber_try_driver_trip_completed_duration_morning_airport$travel_duration),
+                              mean(uber_try_driver_trip_completed_duration_afternoon_airport$travel_duration),
+                              mean(uber_try_driver_trip_completed_duration_evening_airport$travel_duration),
+                              mean(uber_try_driver_trip_completed_duration_night_airport$travel_duration),
+                              mean(uber_try_driver_trip_completed_duration_airport$travel_duration))
+
+seth$sum_trip_duration <- c(sum(uber_try_driver_trip_completed_duration_morning_airport$travel_duration),
+                             sum(uber_try_driver_trip_completed_duration_afternoon_airport$travel_duration),
+                             sum(uber_try_driver_trip_completed_duration_evening_airport$travel_duration),
+                             sum(uber_try_driver_trip_completed_duration_night_airport$travel_duration),
+                             sum(uber_try_driver_trip_completed_duration_airport$travel_duration))
+
+names(seth)[1] <- 'Day_frame'
+names(seth)[2] <- 'Average_no_of_trips_completed'
+names(seth)[3] <- 'Total_no_of_trips_completed'
+names(seth)[4] <- 'Average_no_of_trips_cancelled'
+names(seth)[5] <- 'Total_no_of_trips_cancelled'
+names(seth)[7] <- 'Average_trip_duration'
+names(seth)[8] <- 'Total_trip_duration'
+head(seth)
+```
+#### This dataframe tells us about average no of trips completed, total no of trips completed, average no of trips cancelled, total no of trips cancelled, total no of trips where car was not available, average trip duration and total trip duration for Morning, Afternoon, Evening, Night and for all days cosidering pickup point is airport
+
+#### Average no of trips completed and average no of trips cancelled is calculated with taking the average of each driver for that day-frame or for all day frame
+
+```{r}
+hchart(seth,hcaes(x=Day_frame,y=Total_no_of_trips_completed),type="column") %>% 
+  hc_title(text="Day-frame vs Total no of trips completed, pickpoint is airport",align="center") %>%
+  hc_exporting(enabled=TRUE)
+```
+
+```{r}
+hchart(seth,hcaes(x=Day_frame,y=Total_no_of_trips_cancelled),type="column") %>% 
+  hc_title(text="Day-frame vs Total no of trips cancelled, pickpoint is airport",align="center") %>%
+  hc_exporting(enabled=TRUE)
+```
+
+```{r}
+hchart(seth, "treemap", hcaes(x = Day_frame, value = Total_trip_duration,color=Total_trip_duration)) %>%
+  hc_exporting(enabled = TRUE) %>%
+  hc_title(text="Treemap of day-frame vs sum_trip_no_cars, pickpoint is airport",align="center")
+```
+
+```{r}
+hchart(seth, hcaes(x = Day_frame, y = sum_trip_no_cars), type="funnel",name="Count") %>%
+  hc_exporting(enabled = TRUE) %>%
+  hc_title(text="Funnel of day-frame vs sum_trip_no_cars, pickpoint is airport",align="center")
+```
+
+`
+
